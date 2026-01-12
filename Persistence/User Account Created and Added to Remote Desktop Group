@@ -1,0 +1,19 @@
+// Filter for User Creation and Group Addition events
+(#event_simpleName=UserAccountCreated OR (#event_simpleName=UserAccountAddedToGroup AND GroupRid=0000022B))
+// Group Events by Computer
+| groupBy(ComputerName, function=[
+  { collect([GroupRid, UserName, source.ip])},
+  { count(as=event_count)},
+  { min(@timestamp, as=FirstSeen)},
+  { max(@timestamp, as=LastSeen)}
+])
+// Only show events where the Administrator group was involved
+| GroupRid = 0000022B
+// Must have at least two events within 30 minutes (1,800,000ms)
+| test(event_count >= 2)
+| TimeDiff := LastSeen - FirstSeen
+| test(TimeDiff <= 1800000) // The time difference (in minutes) between both events is gotten by dividing the TimeDiff by 60,000
+// Final formatting
+| table([FirstSeen, LastSeen, ComputerName, UserName, GroupRid, TimeDiff])
+// The user who performed the action is not included in this query. This is because the events i.e. UserAccountCreated and UserAccountAddedToGroup don't show who performed the action, and the event that shows it i.e. UserLogon, is inputting the user's name in the same field where the other events are inputting the names of the accounts that were added. So, use Host Management to figure out who was logged in when the action took place.
+| UserName=*
