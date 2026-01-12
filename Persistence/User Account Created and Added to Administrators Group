@@ -16,3 +16,4 @@
 // Final formatting
 | table([FirstSeen, LastSeen, ComputerName, UserName, GroupRid, TimeDiff])
 // The user who performed the action is not included in this query. This is because the events i.e. UserAccountCreated and UserAccountAddedToGroup don't show who performed the action, and the event that shows it i.e. UserLogon, is inputting the user's name in the same field where the other events are inputting the names of the accounts that were added. So, use Host Management to figure out who was logged in when the action took place.
+| UserName=*
