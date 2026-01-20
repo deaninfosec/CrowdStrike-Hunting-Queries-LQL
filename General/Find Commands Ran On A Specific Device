@@ -1,0 +1,4 @@
+#event_simpleName=ProcessRollup2
+ComputerName="MY-VM-WINDOWS"
+CommandLine=*cmd.exe* // All processes initiated via cmd
+| CommandLine != "*JumpCloud*" // To exclude noisy or benign commands
