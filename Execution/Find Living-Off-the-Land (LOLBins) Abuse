@@ -1,0 +1,58 @@
+// Windows - Living-Off-the-Land Binary (LOLBin) Abuse
+// Detection: Native binaries used for credential dumping, sniffing, or downloading
+// Tuned: Excludes JumpCloud Agent noise
+#event_simpleName=ProcessRollup2
+
+// 1. Broad Filter (Using Wildcards for reliability)
+| (ImageFileName="*regsvr32.exe" OR ImageFileName="*certutil.exe" OR ImageFileName="*msiexec.exe" 
+   OR ImageFileName="*netsh.exe" OR ImageFileName="*pktmon.exe" OR ImageFileName="*print.exe" 
+   OR ImageFileName="*reg.exe" OR ImageFileName="*replace.exe" OR ImageFileName="*cmdkey.exe")
+
+// 2. Map the malicious arguments (The "Case" Logic)
+| case {
+    // Regsvr32 (Squiblydoo)
+    (ImageFileName="*regsvr32.exe" AND (CommandLine="*http*" OR CommandLine="*scrobj.dll*" OR CommandLine="*.sct*")) 
+    | DetectionType := "Defense Evasion - Regsvr32 Remote Script";
+
+    // Certutil (Download or Install)
+    (ImageFileName="*certutil.exe" AND (CommandLine="*-urlcache*" OR CommandLine="*-addstore*")) 
+    | DetectionType := "Defense Evasion - Certutil Abuse";
+
+    // Msiexec (Remote Install)
+    (ImageFileName="*msiexec.exe" AND CommandLine="*http*" AND CommandLine="*/i*") 
+    | DetectionType := "Defense Evasion - Msiexec Remote Install";
+
+    // Netsh (Sniffing ONLY - Ignores Route/VPN noise)
+    (ImageFileName="*netsh.exe" AND CommandLine="*trace*" AND CommandLine="*start*") 
+    | DetectionType := "Discovery - Netsh Traffic Capture";
+
+    // Pktmon (Sniffing)
+    (ImageFileName="*pktmon.exe" AND CommandLine="*start*" AND CommandLine="*capture*") 
+    | DetectionType := "Discovery - Pktmon Traffic Capture";
+
+    // Reg (Credential Dumping)
+    (ImageFileName="*reg.exe" AND CommandLine="*save*" AND (CommandLine="*HKLM\\SAM*" OR CommandLine="*HKLM\\SYSTEM*" OR CommandLine="*HKLM\\SECURITY*")) 
+    | DetectionType := "Credential Access - Registry Hive Dump";
+
+    // Cmdkey (Enumeration)
+    (ImageFileName="*cmdkey.exe" AND CommandLine="*/list*") 
+    | DetectionType := "Credential Access - Cmdkey Enum";
+
+    // Print & Replace (File Copy)
+    (ImageFileName="*print.exe" AND CommandLine="*/D:*") | DetectionType := "Ingress Tool Transfer - Print Copy";
+    (ImageFileName="*replace.exe" AND CommandLine="*/A*") | DetectionType := "Ingress Tool Transfer - Replace Copy";
+
+    * | DetectionType := "None";
+}
+
+// 3. Filter out Benign Noise
+| DetectionType != "None"
+
+// --- NEW TUNING FILTERS ---
+// Exclude JumpCloud Agent Installations
+| CommandLine != "*kickstart.jumpcloud.com*"
+| CommandLine != "*JCINSTALLERARGUMENTS*"
+
+// 4. Display Results
+| table([@timestamp, ComputerName, UserName, DetectionType, CommandLine, ImageFileName])
+| sort(@timestamp, order=desc)
