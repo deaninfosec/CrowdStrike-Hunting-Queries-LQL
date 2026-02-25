@@ -1,0 +1,4 @@
+#event_simpleName=OsVersionInfo
+
+| RFMState=1
+| groupBy([aid], function=selectLast([@timestamp, ComputerName, ProductType, OSVersionString, RFMState]))
