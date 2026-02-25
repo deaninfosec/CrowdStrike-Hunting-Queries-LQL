@@ -1,0 +1,13 @@
+#event_simpleName=SensorHeartbeat
+SensorStateBitMap=2
+| ComputerName = *
+| groupBy([aid], function=(selectFromMax(field="@timestamp", include=[@timestamp, ComputerName, aid, event_platform])))
+| join(
+    query={
+        #event_simpleName=OsVersionInfo
+        | groupBy([aid], function=(selectFromMax(field="@timestamp", include=[aid, AgentVersion, ProductName])))
+    },
+    field=aid,
+    include=[AgentVersion, ProductName]
+)
+| rename([[ComputerName, Hostname], [aid, "Sensor ID"], [event_platform, "Operating System"], [ProductName, "Operating System Version"], [AgentVersion, "Agent Version"]])
