@@ -1,0 +1,21 @@
+// Filter to process execution events only
+#event_simpleName=ProcessRollup2
+// Filter to only executions of schtasks.exe
+| ImageFileName=/schtasks\.exe/i
+// Filter to only scheduled task creation or modification commands
+| CommandLine=/(\/create|\/change)/i
+// Exclude known legitimate scheduled tasks from Microsoft, JumpCloud, Adobe, HP, and Lenovo
+| CommandLine!=/\\Microsoft\\|MicrosoftEdge|Office|OneDrive|Teams|Windows Defender|MRT\.exe|Defender|UpdateAssistant|JumpCloud|Adobe|Hewlett-Packard|Lenovo/i
+// Group by computer and user, counting tasks and collecting command lines with first and last seen timestamps
+| groupBy([ComputerName, UserName], function=[
+    count(as=TaskCount),
+    collect([CommandLine], limit=20),
+    min(@timestamp, as=FirstSeen),
+    max(@timestamp, as=LastSeen)
+])
+// Sort by task count in descending order to surface the most active systems first
+| sort(TaskCount, order=desc)
+// Display relevant fields in a table
+| table([ComputerName, UserName, CommandLine, TaskCount, FirstSeen, LastSeen])
+// Limit results to the top 100 rows
+| head(100)
