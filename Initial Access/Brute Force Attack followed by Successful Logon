@@ -1,0 +1,74 @@
+// Brute Force → Successful Logon Detection
+// Detects multiple failed logons followed by a successful
+// logon on the same host within a 30-minute rolling window
+// MITRE ATT&CK: T1110 (Brute Force), T1078 (Valid Accounts)
+
+// Scope events to failed and successful logon event types only
+(#event_simpleName=UserLogonFailed2 OR #event_simpleName=UserLogon)
+
+// Assign numeric flags to each event so they can be summed later:
+// failed logon gets IsFailed=1, successful logon gets IsSuccess=1
+| case {
+    #event_simpleName=UserLogonFailed2 | IsFailed:=1 | IsSuccess:=0 ;
+    #event_simpleName=UserLogon        | IsFailed:=0 | IsSuccess:=1
+}
+
+// Group all events by host and username, aggregating:
+// - total failed logon count
+// - total successful logon count
+// - logon type and source IP for context
+// - earliest and latest event timestamps in the window
+| groupBy([ComputerName, UserName], function=[
+    { sum(IsFailed, as=FailedCount) },
+    { sum(IsSuccess, as=SuccessCount) },
+    { collect([LogonType, RemoteAddressIP4]) },
+    { min(@timestamp, as=FirstSeen) },
+    { max(@timestamp, as=LastSeen) }
+])
+
+// Only keep groups with 5 or more failed logon attempts (tune as needed)
+| test(FailedCount >= 5)
+
+// Only keep groups where at least one successful logon occurred after the failures
+| test(SuccessCount >= 1)
+
+// Filter out blank usernames and the SYSTEM account to reduce noise
+| UserName=* AND UserName!="" AND UserName!="SYSTEM"
+
+// Calculate the time span between the first and last event in the group (in milliseconds)
+| TimeDiff := LastSeen - FirstSeen
+
+// Discard groups where all activity did not occur within a 30-minute window
+| test(TimeDiff <= 1800000)
+
+// Convert the millisecond time difference to minutes for readability
+| TimeDiffMinutes := TimeDiff / 60000
+
+// Convert epoch millisecond timestamps to human-readable format
+| FirstSeenReadable := formattime("%Y-%m-%d %H:%M:%S", field=FirstSeen, unit=milliseconds)
+| LastSeenReadable  := formattime("%Y-%m-%d %H:%M:%S", field=LastSeen, unit=milliseconds)
+
+// Assign a risk score tier based on the number of failed attempts
+| case {
+    FailedCount >= 20 | RiskScore := "CRITICAL" ;
+    FailedCount >= 10 | RiskScore := "HIGH" ;
+    FailedCount >= 5  | RiskScore := "MEDIUM" ;
+    *                 | RiskScore := "LOW"
+}
+
+// Output the final results with the most relevant fields for triage
+| table([
+    RiskScore,
+    ComputerName,
+    UserName,
+    FailedCount,
+    SuccessCount,
+    TimeDiffMinutes,
+    FirstSeenReadable,
+    LastSeenReadable,
+    RemoteAddressIP4,
+    LogonType
+])
+
+// Sort by highest failed count first to surface the most suspicious activity
+| sort(FailedCount, order=desc)
